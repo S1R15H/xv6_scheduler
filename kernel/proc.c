@@ -6,6 +6,14 @@
 #include "proc.h"
 #include "spinlock.h"
 
+#if defined(SCHED_LOTTERY)
+#define SCHED_NAME "LOTTERY"
+#elif defined(SCHED_STRIDE)
+#define SCHED_NAME "STRIDE"
+#else
+#define SCHED_NAME "RR"
+#endif
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -99,6 +107,7 @@ userinit(void)
 
   p->state = RUNNABLE;
   release(&ptable.lock);
+  cprintf("Scheduler: %s\n", SCHED_NAME);
 }
 
 // Grow current process's memory by n bytes.
@@ -261,6 +270,11 @@ scheduler(void)
     // Enable interrupts on this processor.
     sti();
 
+#if defined(SCHED_LOTTERY)
+// Add Phase 3 lottery loop
+#elif defined(SCHED_STRIDE)
+// Add Phase 4 stride loop
+#else
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -281,7 +295,7 @@ scheduler(void)
       proc = 0;
     }
     release(&ptable.lock);
-
+#endif
   }
 }
 

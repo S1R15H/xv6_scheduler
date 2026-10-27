@@ -47,6 +47,18 @@ KERNEL_DEPS := \
 	$(KERNEL_OBJECTS:.o=.d) \
 	$(KERNEL_SPECIAL_OBJECTS:.o=.d)
 
+SCHED ?= RR
+ifeq ($(filter $(SCHED), RR LOTTERY STRIDE),)
+$(error SCHED must be RR, LOTTERY or STRIDE)
+endif
+KERNEL_CFLAGS += -DSCHED_$(SCHED)
+
+# Recompiles proc.c whenever SCHED changes
+.sched: FORCE
+	@echo $(SCHED) | cmp -s - $@ || echo $(SCHED) > $@
+kernel/proc.o: .sched
+FORCE:
+
 # All generated files
 KERNEL_CLEAN := \
 	$(KERNEL_OBJECTS) \
@@ -60,7 +72,8 @@ KERNEL_CLEAN := \
 	kernel/kernel\
 	bootother\
 	initcode\
-	xv6.img
+	xv6.img\
+	.sched
 
 # add include dir to search path for headers
 KERNEL_CPPFLAGS += -I include
