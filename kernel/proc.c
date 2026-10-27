@@ -12,12 +12,31 @@ struct {
 } ptable;
 
 static struct proc *initproc;
+static int lastpass = 0;
 
 int nextpid = 1;
 extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
+
+// Caller holds ptable.lock.
+static int
+minpass(void)
+{
+  struct proc *p;
+  int minimum = -1;
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != RUNNABLE)
+      continue;
+    if(minimum < 0 || p->pass < minimum)
+      minimum = p->pass;
+  }
+  if(minimum < 0)
+    return lastpass;
+  return minimum;
+}
 
 void
 pinit(void)
@@ -45,6 +64,10 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->numTicks = 0;
+  p->tickets = DEFAULT_TICKETS;
+  p->stride = STRIDE_BIG / p->tickets;
+  p->pass = minpass();
   release(&ptable.lock);
 
   // Allocate kernel stack if possible.
@@ -256,11 +279,39 @@ void
 scheduler(void)
 {
   struct proc *p;
+#if defined(SCHED_STRIDE)
+  struct proc *best;
+#endif
 
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
+#if defined(SCHED_STRIDE)
+    acquire(&ptable.lock);
+    best = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != RUNNABLE)
+        continue;
+      if(best == 0 || p->pass < best->pass)
+        best = p;
+    }
+
+    if(best){
+      p = best;
+      lastpass = p->pass;
+      p->pass += p->stride;
+
+      proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      p->numTicks += 1;
+      swtch(&cpu->scheduler, proc->context);
+      switchkvm();
+      proc = 0;
+    }
+    release(&ptable.lock);
+#else
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -281,6 +332,7 @@ scheduler(void)
       proc = 0;
     }
     release(&ptable.lock);
+#endif
 
   }
 }
@@ -371,8 +423,12 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+    if(p->state == SLEEPING && p->chan == chan){
+      int minimum = minpass();
+      if(p->pass < minimum)
+        p->pass = minimum;
       p->state = RUNNABLE;
+    }
 }
 
 // Wake up all processes sleeping on chan.
