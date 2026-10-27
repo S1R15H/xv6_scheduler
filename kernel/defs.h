@@ -7,6 +7,7 @@ struct file;
 struct inode;
 struct pipe;
 struct proc;
+struct pstat;
 struct spinlock;
 struct stat;
 
@@ -104,6 +105,9 @@ void            pinit(void);
 void            procdump(void);
 void            scheduler(void) __attribute__((noreturn));
 void            sched(void);
+int             getpinfo(struct pstat*);
+int             ps(void);
+int             settickets(int);
 void            sleep(void*, struct spinlock*);
 void            userinit(void);
 int             wait(void);

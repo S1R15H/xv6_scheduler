@@ -74,6 +74,10 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int numTicks;                // time slices received
+  int tickets;                 // share of the CPU this process deserves
+  int stride;                  // STRIDE_BIG / tickets: how far pass moves per time slice
+  int pass;                    // stride scheduler only: total progress so far
 };
 
 // Process memory is laid out contiguously, low addresses first:

@@ -4,6 +4,7 @@
 #include "param.h"
 #include "mmu.h"
 #include "proc.h"
+#include "pstat.h"
 #include "sysfunc.h"
 
 int
@@ -87,4 +88,32 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+int
+sys_getpinfo(void)
+{
+  struct pstat *st;
+
+  if(argptr(0, (char**)&st, sizeof(*st)) < 0)
+    return -1;
+  return getpinfo(st);
+}
+
+int
+sys_ps(void)
+{
+  return ps();
+}
+
+int
+sys_settickets(void)
+{
+  int n;
+
+  if(argint(0, &n) < 0)
+    return -1;
+  if(n < 10 || n > 200 || n % 10 != 0)
+    return -1;
+  return settickets(n);
 }
