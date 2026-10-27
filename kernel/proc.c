@@ -4,6 +4,7 @@
 #include "mmu.h"
 #include "x86.h"
 #include "proc.h"
+#include "pstat.h"
 #include "spinlock.h"
 
 struct {
@@ -67,7 +68,7 @@ found:
   p->numTicks = 0;
   p->tickets = DEFAULT_TICKETS;
   p->stride = STRIDE_BIG / p->tickets;
-  p->pass = minpass();
+  p->pass = 0;
   release(&ptable.lock);
 
   // Allocate kernel stack if possible.
@@ -167,6 +168,8 @@ fork(void)
   np->sz = proc->sz;
   np->parent = proc;
   *np->tf = *proc->tf;
+  np->tickets = proc->tickets;
+  np->stride = proc->stride;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -305,7 +308,6 @@ scheduler(void)
       proc = p;
       switchuvm(p);
       p->state = RUNNING;
-      p->numTicks += 1;
       swtch(&cpu->scheduler, proc->context);
       switchkvm();
       proc = 0;
@@ -324,6 +326,7 @@ scheduler(void)
       proc = p;
       switchuvm(p);
       p->state = RUNNING;
+      p->numTicks += 1;
       swtch(&cpu->scheduler, proc->context);
       switchkvm();
 
@@ -499,4 +502,70 @@ procdump(void)
   }
 }
 
+int
+settickets(int n)
+{
+  acquire(&ptable.lock);
+  proc->tickets = n;
+  proc->stride = STRIDE_BIG / n;
+  release(&ptable.lock);
+  return 0;
+}
 
+int
+getpinfo(struct pstat *st)
+{
+  struct proc *p;
+  int i;
+
+  if(st == 0)
+    return -1;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc, i = 0; p < &ptable.proc[NPROC]; p++, i++){
+    if(p->state != UNUSED){
+      st->inuse[i] = 1;
+      st->pid[i] = p->pid;
+      st->tickets[i] = p->tickets;
+      st->ticks[i] = p->numTicks;
+      st->stride[i] = p->stride;
+      st->pass[i] = p->pass;
+      st->size[i] = p->sz;
+    } else {
+      st->inuse[i] = 0;
+      st->pid[i] = 0;
+      st->tickets[i] = 0;
+      st->ticks[i] = 0;
+      st->stride[i] = 0;
+      st->pass[i] = 0;
+      st->size[i] = 0;
+    }
+  }
+  release(&ptable.lock);
+  return 0;
+}
+
+int
+ps(void)
+{
+  struct proc *p;
+  static char *states[] = {
+  [UNUSED]    "unused",
+  [EMBRYO]    "embryo",
+  [SLEEPING]  "sleep ",
+  [RUNNABLE]  "runble",
+  [RUNNING]   "run   ",
+  [ZOMBIE]    "zombie"
+  };
+
+  acquire(&ptable.lock);
+  cprintf("PID\tState\t\tSize\tTickets\tStride\tPass\tName\n");
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != UNUSED)
+      cprintf("%d\t%s\t%d\t%d\t%d\t%d\t%s\n",
+              p->pid, states[p->state], p->sz, p->tickets, p->stride,
+              p->pass, p->name);
+  }
+  release(&ptable.lock);
+  return 0;
+}

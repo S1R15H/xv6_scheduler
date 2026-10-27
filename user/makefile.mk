@@ -19,7 +19,11 @@ USER_PROGS := \
 	zombie\
 	schedtest\
 	monitor\
-	gamer
+	gamer\
+	ps\
+	pstester\
+	store\
+	childrentester
 
 USER_PROGS := $(addprefix user/, $(USER_PROGS))
 
@@ -105,4 +109,3 @@ user/%.d: user/%.c
 user/%.d: user/%.S
 	$(CC) $(CPPFLAGS) $(USER_CPPFLAGS) $(ASFLAGS) $(USER_ASFLAGS) \
 		-M -MG $< -MF $@ -MT $@ -MT $(<:.S=.o)
-
