@@ -299,6 +299,31 @@ scheduler(void)
     // Enable interrupts on this processor.
     sti();
 
+#if defined(SCHED_STRIDE)
+    acquire(&ptable.lock);
+    best = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != RUNNABLE)
+        continue;
+      if(best == 0 || p->pass < best->pass)
+        best = p;
+    }
+
+    if(best){
+      p = best;
+      lastpass = p->pass;
+      p->pass += p->stride;
+
+      proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&cpu->scheduler, proc->context);
+      switchkvm();
+      proc = 0;
+    }
+    release(&ptable.lock);
+#else
+>>>>>>> 4f34db9ef6d197d680893c802d2abe5789d0e675
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -320,6 +345,7 @@ scheduler(void)
       proc = 0;
     }
     release(&ptable.lock);
+#endif
 
   }
 }
