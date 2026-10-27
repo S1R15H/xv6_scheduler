@@ -7,9 +7,9 @@ struct file;
 struct inode;
 struct pipe;
 struct proc;
-struct pstat;
 struct spinlock;
 struct stat;
+struct pstat;
 
 // bio.c
 void            binit(void);
@@ -99,14 +99,14 @@ int             pipewrite(struct pipe*, char*, int);
 struct proc*    copyproc(struct proc*);
 void            exit(void);
 int             fork(void);
+int             getpinfo(struct pstat*);
 int             growproc(int);
 int             kill(int);
 void            pinit(void);
 void            procdump(void);
+int             ps(void);
 void            scheduler(void) __attribute__((noreturn));
 void            sched(void);
-int             getpinfo(struct pstat*);
-int             ps(void);
 int             settickets(int);
 void            sleep(void*, struct spinlock*);
 void            userinit(void);

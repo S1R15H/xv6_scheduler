@@ -17,13 +17,13 @@ USER_PROGS := \
 	usertests\
 	wc\
 	zombie\
-	schedtest\
-	monitor\
-	gamer\
 	ps\
 	pstester\
 	store\
-	childrentester
+	childrentester\
+	schedtest\
+	monitor\
+	gamer
 
 USER_PROGS := $(addprefix user/, $(USER_PROGS))
 

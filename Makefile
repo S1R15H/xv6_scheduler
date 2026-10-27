@@ -20,7 +20,7 @@ all: xv6.img fs.img
 
 # C compiler options
 # http://gcc.gnu.org/onlinedocs/gcc-4.4.6/gcc/Invoking-GCC.html
-CC = gcc
+CC ?= gcc
 # enable extra warnings
 CFLAGS += -Wall
 # treat warnings as errors
@@ -33,20 +33,20 @@ CFLAGS += -ggdb
 #CFLAGS += -O2
 
 # C Preprocessor
-CPP := cpp
+CPP ?= cpp
 
 # Assembler options
 # http://sourceware.org/binutils/docs/as/Invoking.html
-AS := gcc
+AS ?= $(CC)
 ASFLAGS += -ggdb # produce debugging information for use by gdb
 
 # Linker options
 # http://sourceware.org/binutils/docs/ld/Options.html
-LD := ld
+LD ?= ld
 
-OBJCOPY := objcopy
+OBJCOPY ?= objcopy
 
-OBJDUMP := objdump
+OBJDUMP ?= objdump
 
 ################################################################################
 # Emulator Options
@@ -59,6 +59,8 @@ OBJDUMP := objdump
 ifndef QEMU
 QEMU := $(shell if which qemu 1> /dev/null 2> /dev/null; \
 	then echo qemu; exit; \
+	elif which qemu-system-i386 1> /dev/null 2> /dev/null; \
+	then echo qemu-system-i386; exit; \
 	else \
 	qemu=/u/c/s/cs537-2/ta/tools/qemu; \
 	if test -x $$qemu; then echo $$qemu; exit; fi; fi; \

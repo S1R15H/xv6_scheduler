@@ -89,7 +89,6 @@ static int (*syscalls[])(void) = {
 [SYS_exit]    sys_exit,
 [SYS_fork]    sys_fork,
 [SYS_fstat]   sys_fstat,
-[SYS_getpinfo] sys_getpinfo,
 [SYS_getpid]  sys_getpid,
 [SYS_kill]    sys_kill,
 [SYS_link]    sys_link,
@@ -97,15 +96,16 @@ static int (*syscalls[])(void) = {
 [SYS_mknod]   sys_mknod,
 [SYS_open]    sys_open,
 [SYS_pipe]    sys_pipe,
-[SYS_ps]      sys_ps,
 [SYS_read]    sys_read,
 [SYS_sbrk]    sys_sbrk,
 [SYS_sleep]   sys_sleep,
-[SYS_settickets] sys_settickets,
 [SYS_unlink]  sys_unlink,
 [SYS_wait]    sys_wait,
 [SYS_write]   sys_write,
 [SYS_uptime]  sys_uptime,
+[SYS_getpinfo] sys_getpinfo,
+[SYS_ps]       sys_ps,
+[SYS_settickets] sys_settickets,
 };
 
 // Called on a syscall trap. Checks that the syscall number (passed via eax)

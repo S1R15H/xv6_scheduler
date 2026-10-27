@@ -94,7 +94,6 @@ int
 sys_getpinfo(void)
 {
   struct pstat *st;
-
   if(argptr(0, (char**)&st, sizeof(*st)) < 0)
     return -1;
   return getpinfo(st);
@@ -110,7 +109,6 @@ int
 sys_settickets(void)
 {
   int n;
-
   if(argint(0, &n) < 0)
     return -1;
   if(n < 10 || n > 200 || n % 10 != 0)

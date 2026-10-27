@@ -4,8 +4,8 @@
 #include "mmu.h"
 #include "x86.h"
 #include "proc.h"
-#include "pstat.h"
 #include "spinlock.h"
+#include "pstat.h"
 
 #if defined(SCHED_LOTTERY)
 #define SCHED_NAME "LOTTERY"
@@ -21,7 +21,6 @@ struct {
 } ptable;
 
 static struct proc *initproc;
-static int lastpass = 0;
 
 int nextpid = 1;
 extern void forkret(void);
@@ -29,28 +28,30 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
-// Caller holds ptable.lock.
-static int
-minpass(void)
-{
-  struct proc *p;
-  int minimum = -1;
-
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->state != RUNNABLE)
-      continue;
-    if(minimum < 0 || p->pass < minimum)
-      minimum = p->pass;
-  }
-  if(minimum < 0)
-    return lastpass;
-  return minimum;
-}
-
 void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+}
+
+static int lastpass = 0; // pass of the process that ran most recently
+
+// Smallest pass among RUNNABLE processes. Caller holds ptable.lock.
+static int
+minpass(void)
+{
+  struct proc *p;
+  int m = -1;
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != RUNNABLE)
+      continue;
+    if(m < 0 || p->pass < m)
+      m = p->pass;
+  }
+  if(m < 0)
+    return lastpass; // nothing runnable: use the last one that ran
+  return m;
 }
 
 // Look in the process table for an UNUSED proc.
@@ -76,7 +77,7 @@ found:
   p->numTicks = 0;
   p->tickets = DEFAULT_TICKETS;
   p->stride = STRIDE_BIG / p->tickets;
-  p->pass = 0;
+  p->pass = minpass();
   release(&ptable.lock);
 
   // Allocate kernel stack if possible.
@@ -131,7 +132,7 @@ userinit(void)
 
   p->state = RUNNABLE;
   release(&ptable.lock);
-  cprintf("Scheduler: %s\n", SCHED_NAME);
+  cprintf("scheduler: %s\n", SCHED_NAME);
 }
 
 // Grow current process's memory by n bytes.
@@ -280,6 +281,19 @@ wait(void)
   }
 }
 
+#if defined(SCHED_LOTTERY)
+static uint rseed = 2463534242; // any nonzero starting value
+
+static uint
+rand(void)
+{
+  rseed ^= rseed << 13;
+  rseed ^= rseed >> 17;
+  rseed ^= rseed << 5;
+  return rseed;
+}
+#endif
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -291,7 +305,9 @@ void
 scheduler(void)
 {
   struct proc *p;
-#if defined(SCHED_STRIDE)
+#if defined(SCHED_LOTTERY)
+  int total, winner, counter;
+#elif defined(SCHED_STRIDE)
   struct proc *best;
 #endif
 
@@ -299,8 +315,39 @@ scheduler(void)
     // Enable interrupts on this processor.
     sti();
 
-#if defined(SCHED_STRIDE)
+#if defined(SCHED_LOTTERY)
     acquire(&ptable.lock);
+
+    total = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+      if(p->state == RUNNABLE)
+        total += p->tickets;
+
+    if(total > 0){
+      winner = rand() % total;
+      counter = 0;
+
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state != RUNNABLE)
+          continue;
+        counter += p->tickets;
+        if(counter > winner){
+          proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+          p->numTicks += 1;
+          swtch(&cpu->scheduler, proc->context);
+          switchkvm();
+          proc = 0;
+          break;
+        }
+      }
+    }
+
+    release(&ptable.lock);
+#elif defined(SCHED_STRIDE)
+    acquire(&ptable.lock);
+
     best = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
@@ -317,13 +364,14 @@ scheduler(void)
       proc = p;
       switchuvm(p);
       p->state = RUNNING;
+      p->numTicks += 1;
       swtch(&cpu->scheduler, proc->context);
       switchkvm();
       proc = 0;
     }
+
     release(&ptable.lock);
 #else
->>>>>>> 4f34db9ef6d197d680893c802d2abe5789d0e675
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -437,9 +485,9 @@ wakeup1(void *chan)
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan){
-      int minimum = minpass();
-      if(p->pass < minimum)
-        p->pass = minimum;
+      int mp = minpass();
+      if(p->pass < mp)
+        p->pass = mp;
       p->state = RUNNABLE;
     }
 }
@@ -526,13 +574,13 @@ int
 getpinfo(struct pstat *st)
 {
   struct proc *p;
-  int i;
+  int i = 0;
 
-  if(st == 0)
+  if(!st)
     return -1;
 
   acquire(&ptable.lock);
-  for(p = ptable.proc, i = 0; p < &ptable.proc[NPROC]; p++, i++){
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++, i++){
     if(p->state != UNUSED){
       st->inuse[i] = 1;
       st->pid[i] = p->pid;
@@ -569,12 +617,11 @@ ps(void)
   };
 
   acquire(&ptable.lock);
-  cprintf("PID\tState\t\tSize\tTickets\tStride\tPass\tName\n");
+  cprintf("PID\tState\tSize\tTickets\tStride\tPass\tName\n");
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state != UNUSED)
       cprintf("%d\t%s\t%d\t%d\t%d\t%d\t%s\n",
-              p->pid, states[p->state], p->sz, p->tickets, p->stride,
-              p->pass, p->name);
+              p->pid, states[p->state], p->sz, p->tickets, p->stride, p->pass, p->name);
   }
   release(&ptable.lock);
   return 0;
