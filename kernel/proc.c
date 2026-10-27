@@ -4,6 +4,7 @@
 #include "mmu.h"
 #include "x86.h"
 #include "proc.h"
+#include "pstat.h"
 #include "spinlock.h"
 
 #if defined(SCHED_LOTTERY)
@@ -20,12 +21,31 @@ struct {
 } ptable;
 
 static struct proc *initproc;
+static int lastpass = 0;
 
 int nextpid = 1;
 extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
+
+// Caller holds ptable.lock.
+static int
+minpass(void)
+{
+  struct proc *p;
+  int minimum = -1;
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != RUNNABLE)
+      continue;
+    if(minimum < 0 || p->pass < minimum)
+      minimum = p->pass;
+  }
+  if(minimum < 0)
+    return lastpass;
+  return minimum;
+}
 
 void
 pinit(void)
@@ -53,6 +73,10 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->numTicks = 0;
+  p->tickets = DEFAULT_TICKETS;
+  p->stride = STRIDE_BIG / p->tickets;
+  p->pass = 0;
   release(&ptable.lock);
 
   // Allocate kernel stack if possible.
@@ -153,6 +177,8 @@ fork(void)
   np->sz = proc->sz;
   np->parent = proc;
   *np->tf = *proc->tf;
+  np->tickets = proc->tickets;
+  np->stride = proc->stride;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -265,16 +291,14 @@ void
 scheduler(void)
 {
   struct proc *p;
+#if defined(SCHED_STRIDE)
+  struct proc *best;
+#endif
 
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
-#if defined(SCHED_LOTTERY)
-// Add Phase 3 lottery loop
-#elif defined(SCHED_STRIDE)
-// Add Phase 4 stride loop
-#else
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -287,6 +311,7 @@ scheduler(void)
       proc = p;
       switchuvm(p);
       p->state = RUNNING;
+      p->numTicks += 1;
       swtch(&cpu->scheduler, proc->context);
       switchkvm();
 
@@ -295,7 +320,7 @@ scheduler(void)
       proc = 0;
     }
     release(&ptable.lock);
-#endif
+
   }
 }
 
@@ -385,8 +410,12 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+    if(p->state == SLEEPING && p->chan == chan){
+      int minimum = minpass();
+      if(p->pass < minimum)
+        p->pass = minimum;
       p->state = RUNNABLE;
+    }
 }
 
 // Wake up all processes sleeping on chan.
@@ -457,4 +486,70 @@ procdump(void)
   }
 }
 
+int
+settickets(int n)
+{
+  acquire(&ptable.lock);
+  proc->tickets = n;
+  proc->stride = STRIDE_BIG / n;
+  release(&ptable.lock);
+  return 0;
+}
 
+int
+getpinfo(struct pstat *st)
+{
+  struct proc *p;
+  int i;
+
+  if(st == 0)
+    return -1;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc, i = 0; p < &ptable.proc[NPROC]; p++, i++){
+    if(p->state != UNUSED){
+      st->inuse[i] = 1;
+      st->pid[i] = p->pid;
+      st->tickets[i] = p->tickets;
+      st->ticks[i] = p->numTicks;
+      st->stride[i] = p->stride;
+      st->pass[i] = p->pass;
+      st->size[i] = p->sz;
+    } else {
+      st->inuse[i] = 0;
+      st->pid[i] = 0;
+      st->tickets[i] = 0;
+      st->ticks[i] = 0;
+      st->stride[i] = 0;
+      st->pass[i] = 0;
+      st->size[i] = 0;
+    }
+  }
+  release(&ptable.lock);
+  return 0;
+}
+
+int
+ps(void)
+{
+  struct proc *p;
+  static char *states[] = {
+  [UNUSED]    "unused",
+  [EMBRYO]    "embryo",
+  [SLEEPING]  "sleep ",
+  [RUNNABLE]  "runble",
+  [RUNNING]   "run   ",
+  [ZOMBIE]    "zombie"
+  };
+
+  acquire(&ptable.lock);
+  cprintf("PID\tState\t\tSize\tTickets\tStride\tPass\tName\n");
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != UNUSED)
+      cprintf("%d\t%s\t%d\t%d\t%d\t%d\t%s\n",
+              p->pid, states[p->state], p->sz, p->tickets, p->stride,
+              p->pass, p->name);
+  }
+  release(&ptable.lock);
+  return 0;
+}
