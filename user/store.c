@@ -14,9 +14,10 @@ main(void)
     exit();
   }
 
+  printf(1, "PID\tTickets\tStride\tPass\tTicks\n");
   for(i = 0; i < NPROC; i++){
     if(st.inuse[i])
-      printf(1, "%d %d %d %d %d\n",
+      printf(1, "%d\t%d\t%d\t%d\t%d\n",
              st.pid[i], st.tickets[i], st.stride[i], st.pass[i], st.ticks[i]);
   }
   exit();
