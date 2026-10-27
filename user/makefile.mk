@@ -64,6 +64,9 @@ USER_CFLAGS += -fno-stack-protector
 # generate code for 32-bit environment
 USER_CFLAGS += -m32
 
+# disable false-positive infinite-recursion warning in GCC 12+ for sh.c
+USER_CFLAGS += -Wno-infinite-recursion
+
 # generate code for 32-bit environment
 USER_ASFLAGS := $(USER_CFLAGS)
 
