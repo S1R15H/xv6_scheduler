@@ -46,3 +46,24 @@ Bochs makes debugging easier, but QEMU is much faster.
 To run in Bochs, run "make bochs" and then type "c" at the bochs prompt.
 To run in QEMU, run "make qemu".
 
+LOCAL SCHEDULER ADVISOR DEMO
+
+The host-side advisor can turn monitor CSV samples into one ticket
+recommendation using a local Ollama model. It does not change processes or
+modify the kernel. Build with STRIDE and run two CPU-bound workers:
+
+    make qemu-nox SCHED=STRIDE
+    schedtest 20 10
+
+Note the worker PIDs printed by schedtest, then run `monitor <interval> <samples>`
+in the xv6 shell. Copy its `time,pid,tickets,ticks` CSV output to a host file.
+Install/start Ollama and make a model available (for example `ollama pull
+llama3.1`), then run from the repository root, replacing the example PIDs:
+
+    python tools/scheduler_advisor.py monitor.csv --target-pid 4 --peer-pid 5 --target-share 70
+
+The advisor prints one JSON recommendation or exits with an error without
+printing a recommendation. It accepts only the target PID and ticket counts
+from 10 to 200 in multiples of 10. Apply a recommendation manually by
+restarting schedtest with the suggested ticket arguments. Run the focused
+tests with `python -m unittest discover -s tools -p "test_scheduler_advisor.py"`.
